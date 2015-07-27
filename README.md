@@ -5,17 +5,19 @@ Wraps Postgres pg_notify in core.async channels
 ## Usage
 
 ```clj
-(with-open [cnxn-subscription (sql/get-connection @db)]
-  (let [sub (start! (pg-subscriber ["my-channel"]) cnxn-subscription)]
+(with-open [listener-cnxn (sql/get-connection @db)]
+  (let [sub (listen! (pg-listener ["my-channel"])
+                     listener-cnxn)]
 
     (sql/with-db-transaction [cnxn @db]
-      (pg-pub! cnxn "my-channel" "hello"))
+      (pg-notify! cnxn "my-channel" "hello"))
 
     (<!! sub)
     ;=> [{:channel "my-channel" :payload "hello"}]
+    ))
 ```
 
-For more advanced usage, see documentation on `pg-subscriber`.
+For more advanced usage, see documentation on `pg-listener`.
 
 ## License
 

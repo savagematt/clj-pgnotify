@@ -15,12 +15,12 @@
             channel-name (str "chan" (string/replace (str (UUID/randomUUID)) #"[^A-Za-z0-9_]" ""))
             payload      (str (UUID/randomUUID))
 
-            sub          (start! (pg-subscriber [channel-name]
-                                         :ex-handler (fn [e] (reset! error-atom e)))
+            sub          (listen! (pg-listener [channel-name]
+                                            :ex-handler (fn [e] (reset! error-atom e)))
                                  connection-passed-to-subscription)]
 
         (sql/with-db-transaction [cnxn @db]
-          (pg-pub! cnxn channel-name payload))
+          (pg-notify! cnxn channel-name payload))
 
         (fact "We get the first published message"
           (first (alts!! [sub (timeout 1000)]))
@@ -37,14 +37,14 @@
               channel-name (str "chan" (string/replace (str (UUID/randomUUID)) #"[^A-Za-z0-9_]" ""))
               payload      (str (UUID/randomUUID))
 
-              sub          (start! (pg-subscriber [channel-name]
-                                           :ex-handler (fn [e] (reset! error-atom e))
-                                           :heartbeat (default-heartbeat :poll-server-socket-ms 10))
+              sub          (listen! (pg-listener [channel-name]
+                                              :ex-handler (fn [e] (reset! error-atom e))
+                                              :heartbeat (default-heartbeat :poll-server-socket-ms 10))
                                    connection-passed-to-subscription)
               ]
 
           (sql/with-db-transaction [cnxn @db]
-            (pg-pub! cnxn channel-name payload))
+            (pg-notify! cnxn channel-name payload))
 
           ; Originally published message
           (fact "We get the first published message"
@@ -56,7 +56,7 @@
 
           (fact "database connection should be screwed for test to be valid"
             (sql/with-db-transaction [cnxn @db]
-              (pg-pub! cnxn channel-name payload))
+              (pg-notify! cnxn channel-name payload))
             => (throws SQLException))
 
           (fact "channel should be closed"
@@ -71,19 +71,19 @@
 
   (fact "closing db connection"
     (with-open [^Connection connection-passed-to-subscription (sql/get-connection @db)]
-      (let [error-atom                      (atom nil)
+      (let [error-atom            (atom nil)
 
-            channel-name                    (str "chan" (string/replace (str (UUID/randomUUID)) #"[^A-Za-z0-9_]" ""))
-            payload                         (str (UUID/randomUUID))
+            channel-name          (str "chan" (string/replace (str (UUID/randomUUID)) #"[^A-Za-z0-9_]" ""))
+            payload               (str (UUID/randomUUID))
 
             poll-notifications-ms 10
-            sub                             (start! (pg-subscriber [channel-name]
-                                                            :ex-handler (fn [e] (reset! error-atom e))
-                                                            :poll (default-poller :poll-notifications-ms poll-notifications-ms))
-                                                    connection-passed-to-subscription)]
+            sub                   (listen! (pg-listener [channel-name]
+                                                     :ex-handler (fn [e] (reset! error-atom e))
+                                                     :poll (default-poller :poll-notifications-ms poll-notifications-ms))
+                                          connection-passed-to-subscription)]
 
         (sql/with-db-transaction [cnxn @db]
-          (pg-pub! cnxn channel-name payload))
+          (pg-notify! cnxn channel-name payload))
 
         (fact "We get the first published message"
           (first (alts!! [sub (timeout 1000)]))

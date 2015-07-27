@@ -67,10 +67,10 @@
                :payload (.getParameter n)}) ns)
       (<!! (timeout poll-notifications-ms)))))
 
-(defprotocol Poller
-  (start! [this cnxn]))
+(defprotocol Listener
+  (listen! [this cnxn]))
 
-(defn pg-subscriber
+(defn pg-listener
   "Starts listening to channel-names using cnxn.
 
   Returns a Poller, which can be start!ed with a PGConnection.
@@ -117,8 +117,8 @@
       :or   {ex-handler clojure.stacktrace/print-cause-trace
              heartbeat  (default-heartbeat)
              poll       (default-poller)}}]
-  (reify Poller
-    (start! [this cnxn]
+  (reify Listener
+    (listen! [this cnxn]
       (let [notifications (chan 1)
             errors        (chan 1)
             output        (chan 0)]
@@ -149,7 +149,7 @@
 
         output))))
 
-(defn pg-pub! [db channel-name payload]
+(defn pg-notify! [db channel-name payload]
   (try
     (sql/execute! db [(str "NOTIFY " channel-name ", '" payload "'")])
     (catch SQLException e
