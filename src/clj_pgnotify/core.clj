@@ -4,9 +4,9 @@
   (:import [java.sql Statement SQLException Connection PreparedStatement]
            [org.postgresql PGConnection PGNotification]))
 
-(defn get-notifications [cnxn]
+(defn get-notifications [^PGConnection cnxn]
   (try
-    (.getNotifications ^PGConnection cnxn)
+    (.getNotifications cnxn)
     (catch Exception e
       (throw (ex-info (str "There was a problem getting notifications: " (.getMessage e))
                       {:error-type :get-notifications-failed}
@@ -22,7 +22,7 @@
                       {:error-type :dummy-query-failed}
                       e)))))
 
-(defn pg-listen [cnxn channel-names]
+(defn pg-listen [^Connection cnxn channel-names]
   (try
     (with-open [stmt (->> channel-names
                           (reduce (fn [^Statement stmt channel-name]
@@ -60,7 +60,7 @@
 
 (defn default-poller [& {:keys [poll-notifications-ms]
                          :or   {poll-notifications-ms 10}}]
-  (fn [cnxn]
+  (fn [^PGConnection cnxn]
     (if-let [ns (get-notifications cnxn)]
       (mapv (fn [^PGNotification n]
               {:channel (.getName n)
