@@ -39,7 +39,7 @@
 
               sub          (listen! (pg-listener [channel-name]
                                               :ex-handler (fn [e] (reset! error-atom e))
-                                              :heartbeat (default-heartbeat :poll-server-socket-ms 10))
+                                              :poll (default-poller :heartbeat (default-heartbeat :poll-server-socket-ms 10)))
                                    connection-passed-to-subscription)
               ]
 

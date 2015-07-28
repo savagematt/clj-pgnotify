@@ -1,6 +1,6 @@
 (ns clj-pgnotify.core
   (:require [clojure.java.jdbc :as sql]
-            [clojure.core.async :refer [chan go go-loop >!! <!! >! <! close! timeout alts!]])
+            [clojure.core.async :refer [chan go go-loop >!! >! <! close! timeout alts! onto-chan]])
   (:import [java.sql Statement SQLException Connection PreparedStatement]
            [org.postgresql PGConnection PGNotification]))
 
@@ -42,10 +42,21 @@
      nil
      (catch Exception e# e#)))
 
+
+
 (defmacro report-errors-or-recur [errors & body]
   `(if-let [e# (exception-or-nil ~@body)]
      (>! ~errors [:error e#])
      (recur)))
+
+(defn run-every-ms [ms func & [value-when-not-run]]
+  (let [a (atom (System/currentTimeMillis))]
+    (fn [& args]
+      (let [now (System/currentTimeMillis)]
+        (if (<= ms (- now @a) )
+          (do (reset! a now)
+              (apply func args))
+          value-when-not-run)))))
 
 (defn default-heartbeat [& {:keys [poll-server-socket-ms
                                    dummy-query-sql
@@ -54,18 +65,25 @@
                                    dummy-query-sql             "SELECT 1"
                                    dummy-query-timeout-seconds 5
                                    }}]
-  (fn [cnxn]
-    (try-dummy-query cnxn dummy-query-sql dummy-query-timeout-seconds)
-    (<!! (timeout poll-server-socket-ms))))
+  (run-every-ms poll-server-socket-ms
+    (fn [cnxn]
+      (try-dummy-query cnxn dummy-query-sql dummy-query-timeout-seconds))))
 
-(defn default-poller [& {:keys [poll-notifications-ms]
-                         :or   {poll-notifications-ms 10}}]
+(defn default-poller [& {:keys [poll-notifications-ms
+                                heartbeat]
+                         :or   {poll-notifications-ms 10
+                                heartbeat (default-heartbeat)}}]
   (fn [^PGConnection cnxn]
+    (heartbeat cnxn)
+
     (if-let [ns (get-notifications cnxn)]
-      (mapv (fn [^PGNotification n]
-              {:channel (.getName n)
-               :payload (.getParameter n)}) ns)
-      (<!! (timeout poll-notifications-ms)))))
+      (let [output (chan 1)]
+        (>!! output (mapv (fn [^PGNotification n]
+                                  {:channel (.getName n)
+                                   :payload (.getParameter n)}) ns))
+        output)
+
+      (timeout poll-notifications-ms))))
 
 (defprotocol Listener
   (listen! [this cnxn]))
@@ -111,29 +129,22 @@
   "
   [channel-names
    & {:keys [ex-handler
-             heartbeat
              poll]
 
       :or   {ex-handler clojure.stacktrace/print-cause-trace
-             heartbeat  (default-heartbeat)
              poll       (default-poller)}}]
 
   (reify Listener
-    (listen! [this cnxn]
+    (listen! [_this cnxn]
       (let [notifications (chan 1)
             output        (chan 0)]
 
         (pg-listen cnxn channel-names)
 
-        ; Heartbeat loop checking the server's end of the socket is still open
-        (go-loop []
-          (report-errors-or-recur notifications
-            (heartbeat cnxn)))
-
         ; Polling loop for notifications
         (go-loop []
           (report-errors-or-recur notifications
-            (when-let [ns (poll cnxn)]
+            (when-let [ns (<! (poll cnxn))]
               (>! notifications [:cont ns]))))
 
         ; Control loop merging notifications into output and cleaning up on error
