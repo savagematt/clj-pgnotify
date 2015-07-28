@@ -44,7 +44,7 @@
 
 (defmacro report-errors-or-recur [errors & body]
   `(if-let [e# (exception-or-nil ~@body)]
-     (go (when (>! ~errors e#)))
+     (>! ~errors [:error e#])
      (recur)))
 
 (defn default-heartbeat [& {:keys [poll-server-socket-ms
@@ -117,35 +117,37 @@
       :or   {ex-handler clojure.stacktrace/print-cause-trace
              heartbeat  (default-heartbeat)
              poll       (default-poller)}}]
+
   (reify Listener
     (listen! [this cnxn]
       (let [notifications (chan 1)
-            errors        (chan 1)
             output        (chan 0)]
 
         (pg-listen cnxn channel-names)
 
         ; Heartbeat loop checking the server's end of the socket is still open
         (go-loop []
-          (report-errors-or-recur errors
+          (report-errors-or-recur notifications
             (heartbeat cnxn)))
 
         ; Polling loop for notifications
         (go-loop []
-          (report-errors-or-recur errors
+          (report-errors-or-recur notifications
             (when-let [ns (poll cnxn)]
-              (>! notifications ns))))
+              (>! notifications [:cont ns]))))
 
         ; Control loop merging notifications into output and cleaning up on error
         (go-loop []
-          (let [[value _] (alts! [notifications errors] :priority true)]
-            (if (instance? Throwable value)
-              (do (close! notifications)
-                  (close! errors)
-                  (close! output)
-                  (ex-handler value))
+          (let [[message-type value] (<! notifications)]
+            (case  message-type
+              :cont
               (do (>! output value)
-                  (recur)))))
+                  (recur))
+
+              :error
+              (do (close! notifications)
+                  (close! output)
+                  (ex-handler value)))))
 
         output))))
 
