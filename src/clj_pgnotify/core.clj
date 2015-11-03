@@ -91,7 +91,7 @@
 (defn pg-listener
   "Starts listening to channel-names using cnxn.
 
-  Returns a Poller, which can be start!ed with a PGConnection.
+  Returns a Listener, which is a protocol with a single listen! function, which takes a PGConnection
 
   start! returns an output channel, which will close when the connection is closed, or when the heartbeat
   with the server fails.
