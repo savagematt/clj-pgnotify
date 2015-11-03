@@ -12,7 +12,7 @@
                (println "Test not running- create"
                         (str "test/" props-path)
                         "to run test. \n"
-                        "NB: TESTS WILL STOP AND START THE POSTGRES INSTANCE ON YOUR MACHINE \n"
+                        "NB: TESTS WILL KILL ALL CONNECTIONS TO THE POSTGRES INSTANCE ON YOUR MACHINE \n"
                         "Example files are available in test/example_properties. \n"
                         "The donotcheckin directory should be in .gitignore. Double check it really is before commiting."))))
 
