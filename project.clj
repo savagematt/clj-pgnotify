@@ -1,4 +1,4 @@
-(defproject savagematt/clj-pgnotify "0.1.0"
+(defproject savagematt/clj-pgnotify "0.1.1-SNAPSHOT"
   :description "Wraps Postgres pg_notify in core.async channels"
   :url "http://github.com/savagematt/slj-pgnotify"
   :license {:name "Eclipse Public License"
