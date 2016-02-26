@@ -6,14 +6,14 @@ Wraps Postgres pg_notify in core.async channels
 
 ```clj
 (with-open [listener-cnxn (sql/get-connection @db)]
-  (let [sub (listen! (pg-listener ["my-channel"])
+  (let [sub (listen! (pg-listener ["my_channel"])
                      listener-cnxn)]
 
     (sql/with-db-transaction [cnxn @db]
-      (pg-notify! cnxn "my-channel" "hello"))
+      (pg-notify! cnxn "my_channel" "hello"))
 
     (<!! sub)
-    ;=> [{:channel "my-channel" :payload "hello"}]
+    ;=> [{:channel "my_channel" :payload "hello"}]
     ))
 ```
 
