@@ -21,6 +21,10 @@
         (sql/with-db-transaction [cnxn @db]
           (pg-notify! cnxn channel-name payload))
 
+        (fact "There is an empty message initially"
+              (first (alts!! [sub (timeout 1000)]))
+              => [])
+
         (fact "We get the first published message"
           (first (alts!! [sub (timeout 1000)]))
           => [{:channel channel-name
@@ -47,15 +51,18 @@
         (sql/with-db-transaction [cnxn @db]
           (pg-notify! cnxn channel-name payload))
 
-        ; Originally published message
+        (fact "There is an empty message initially"
+              (first (alts!! [sub (timeout 1000)]))
+              => [])
+
+        (fact "Then the test kills all running connections to the server"
+              (sql/with-db-transaction [cnxn @db]
+                                       (sql/query cnxn ["SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE pid <> pg_backend_pid();"])))
+
         (fact "We get the first published message"
           (first (alts!! [sub (timeout 1000)]))
           => [{:channel channel-name
                :payload payload}])
-
-        (fact "the test killed all running connections to the server"
-          (sql/with-db-transaction [cnxn @db]
-            (sql/query cnxn ["SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE pid <> pg_backend_pid();"])))
 
         (Thread/sleep heartbeat-frequency-ms)
 
@@ -86,15 +93,19 @@
         (sql/with-db-transaction [cnxn @db]
           (pg-notify! cnxn channel-name payload))
 
+        (fact "There is an empty message initially"
+              (first (alts!! [sub (timeout 1000)]))
+              => [])
+
+        (fact "the test closed the connection"
+              (.close connection-passed-to-subscription))
+        (Thread/sleep heartbeat-frequency-ms)
+
         ; Originally published message
         (fact "We get the first published message"
           (first (alts!! [sub (timeout 1000)]))
           => [{:channel channel-name
                :payload payload}])
-
-        (fact "the test closed the connection"
-          (.close connection-passed-to-subscription))
-        (Thread/sleep heartbeat-frequency-ms)
 
         (fact "channel should be closed"
           (first (alts!! [sub] :default "nothing in channel"))

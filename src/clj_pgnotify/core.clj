@@ -1,6 +1,6 @@
 (ns clj-pgnotify.core
   (:require [clojure.java.jdbc :as sql]
-            [clojure.core.async :refer [chan go go-loop >!! >! <! close! timeout alts! onto-chan]])
+            [clojure.core.async :refer [chan go go-loop >!! <!! >! <! close! timeout alts! onto-chan]])
   (:import [java.sql Statement SQLException Connection PreparedStatement]
            [org.postgresql PGConnection PGNotification]))
 
@@ -41,13 +41,6 @@
      ~@body
      nil
      (catch Exception e# e#)))
-
-
-
-(defmacro report-errors-or-recur [errors & body]
-  `(if-let [e# (exception-or-nil ~@body)]
-     (>! ~errors [:error e#])
-     (recur)))
 
 (defn run-every-ms [ms func & [value-when-not-run]]
   (let [a (atom (System/currentTimeMillis))]
@@ -129,7 +122,7 @@
 
   See default-poller for an example
 
-  When either :poll or :heartbeat return an exception, the output channel will be closed.
+  When either :poll returns an exception, the output channel will be closed and the exception passed to :ex-handler.
   "
   [channel-names
    & {:keys [ex-handler
@@ -140,30 +133,17 @@
 
    (reify Listener
     (listen! [_this cnxn]
-      (let [notifications (chan 0)
-            output        (chan 0)]
+      (let [output        (chan 0)]
 
         (pg-listen cnxn channel-names)
 
-        ; Polling loop for notifications
         (go-loop []
-          (report-errors-or-recur notifications
-            (let [ns (poll cnxn)]
-              (when-not (empty? ns)
-                (>! notifications [:cont ns])))))
-
-        ; Control loop merging notifications into output and cleaning up on error
-        (go-loop []
-          (let [[message-type value] (<! notifications)]
-            (case  message-type
-              :cont
-              (do (>! output value)
-                  (recur))
-
-              :error
-              (do (close! notifications)
-                  (close! output)
-                  (ex-handler value)))))
+          (if-let [exception (exception-or-nil
+                               (let [ns (poll cnxn)]
+                                 (>! output (or ns []))))]
+            (do (close! output)
+                (ex-handler exception))
+            (recur)))
 
         output))))
 
