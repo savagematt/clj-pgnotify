@@ -6,7 +6,7 @@
   :dependencies [[org.clojure/clojure "1.6.0"]
                  [org.postgresql/postgresql "9.4-1201-jdbc41"]
                  [org.clojure/java.jdbc "0.3.6"]
-                 [org.clojure/core.async "0.1.346.0-17112a-alpha"]
+                 [org.clojure/core.async "0.2.374"]
                  ]
   :profiles {:dev      {:dependencies [[midje "1.6.3"]]
 
