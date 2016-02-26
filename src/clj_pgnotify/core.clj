@@ -69,21 +69,37 @@
     (fn [cnxn]
       (try-dummy-query cnxn dummy-query-sql dummy-query-timeout-seconds))))
 
-(defn default-poller [& {:keys [poll-notifications-ms
-                                heartbeat]
-                         :or   {poll-notifications-ms 10
-                                heartbeat (default-heartbeat)}}]
+(defn default-poller
+  "Returns a function that:
+
+  - Takes a PGConnection
+  - Calls :heartbeat with the connection to check the server is still listening
+  - Gets notifications from the connection
+  - Returns a vector of {:channel \"channel_name\" :payload \"some payload\"}
+
+  Opts:
+
+  :heartbeat
+  An arity 1 function which:
+  - takes a sql connection
+  - runs some kind of no-op SQL statement, eg 'SELECT 1'
+  - throws an exception if the statement fails
+  - return value is ignored
+
+  See default-heartbeat for an example
+  "
+  [& {:keys [poll-notifications-ms
+             heartbeat]
+      :or   {poll-notifications-ms 10
+             heartbeat             (default-heartbeat)}}]
+
   (fn [^PGConnection cnxn]
     (heartbeat cnxn)
 
-    (if-let [ns (get-notifications cnxn)]
-      (let [output (chan 1)]
-        (>!! output (mapv (fn [^PGNotification n]
-                                  {:channel (.getName n)
-                                   :payload (.getParameter n)}) ns))
-        output)
-
-      (timeout poll-notifications-ms))))
+    (->> (get-notifications cnxn)
+         (mapv (fn [^PGNotification n]
+                 {:channel (.getName n)
+                  :payload (.getParameter n)})))))
 
 (defprotocol Listener
   (listen! [this cnxn]))
@@ -93,7 +109,7 @@
 
   Returns a Listener, which is a protocol with a single listen! function, which takes a PGConnection
 
-  start! returns an output channel, which will close when the connection is closed, or when the heartbeat
+  listen! returns an output channel, which will close when the connection is closed, or when the heartbeat
   with the server fails.
 
   Opts:
@@ -102,25 +118,13 @@
   An arity 1 function which will be passed the exception should there be errors getting notifications
   or heartbeating with the server
 
-  :heartbeat
-  An arity 1 function which:
-  - takes a sql connection
-  - runs some kind of no-op SQL statement, eg 'SELECT 1'
-  - throws an exception if the statement fails
-  - return value is ignored
-
-  It is assumed that this function will end with (<!! (timeout some-timeout)) in order to implement
-  throttling
-
-  See default-heartbeat for an example
-
   :poll
   An arity 1 function which
   - takes a sql connection
   - checks for new notifications, by calling (.getNotifications cnxn) and possibly mapping to so other structure
   - returns the (possibly mapped) notifications
 
-  It is assumed that if no notifications are received, this function will end with (<!! (timeout some-timeout))
+  It is assumed that if no notifications are received, the :poll function will end with (<!! (timeout some-timeout))
   in order to implement throttling
 
   See default-poller for an example
@@ -134,9 +138,9 @@
       :or   {ex-handler clojure.stacktrace/print-cause-trace
              poll       (default-poller)}}]
 
-  (reify Listener
+   (reify Listener
     (listen! [_this cnxn]
-      (let [notifications (chan 1)
+      (let [notifications (chan 0)
             output        (chan 0)]
 
         (pg-listen cnxn channel-names)
@@ -144,8 +148,9 @@
         ; Polling loop for notifications
         (go-loop []
           (report-errors-or-recur notifications
-            (when-let [ns (<! (poll cnxn))]
-              (>! notifications [:cont ns]))))
+            (let [ns (poll cnxn)]
+              (when-not (empty? ns)
+                (>! notifications [:cont ns])))))
 
         ; Control loop merging notifications into output and cleaning up on error
         (go-loop []
